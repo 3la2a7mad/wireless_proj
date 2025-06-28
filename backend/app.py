@@ -1,37 +1,35 @@
 import os
-import math  # Make sure math module is imported for calculations
+import math
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
-import openai  # Using openai library for OpenRouter compatibility
+import openai # This library works for OpenAI directly
 
-# Load environment variables from .env file
+# Load environment variables from .env file for local testing
 load_dotenv()
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for frontend to communicate with backend
+CORS(app)  # Enable CORS for communication
 
-# --- Configure OpenRouter API ---
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-OPENROUTER_MODEL_ID = os.getenv("OPENROUTER_MODEL_ID")
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"  # Standard OpenRouter base URL
+# --- Configure the OFFICIAL OpenAI API ---
+# The code will look for an environment variable named 'OPENAI_API_KEY'
+# You will set this in Render.
+try:
+    openai.api_key = os.environ.get('OPENAI_API_KEY')
+    # Check if the key was actually found
+    if openai.api_key is None:
+        raise ValueError("OPENAI_API_KEY not found in environment variables.")
+    # Initialize the client. When base_url is not set, it defaults to OpenAI.
+    client = openai.OpenAI()
+    OPENAI_MODEL_ID = "gpt-3.5-turbo" # We will use the standard gpt-3.5-turbo model
+    print("OpenAI API client configured successfully.")
+except Exception as e:
+    print(f"Warning: Could not configure OpenAI client. {e}")
+    client = None
 
-print(f"OPENROUTER_API_KEY: {OPENROUTER_API_KEY is not None}, OPENROUTER_MODEL_ID: {OPENROUTER_MODEL_ID}")
 
-if not OPENROUTER_API_KEY or not OPENROUTER_MODEL_ID:
-    print("Warning: OPENROUTER_API_KEY or OPENROUTER_MODEL_ID not found in .env. LLM functionality will be unavailable.")
-    openrouter_client = None
-else:
-    try:
-        # OpenRouter API is compatible with OpenAI Python client
-        openrouter_client = openai.OpenAI(
-            base_url=OPENROUTER_BASE_URL,
-            api_key=OPENROUTER_API_KEY,
-        )
-    except Exception as e:
-        print(f"Error configuring OpenRouter API: {e}. LLM functionality will be limited.")
-        openrouter_client = None
-
+# Your calculation and validation functions remain EXACTLY THE SAME.
+# No changes needed for the functions below this line.
 
 def validate_inputs(scenario, parameters):
     """
@@ -145,7 +143,7 @@ def perform_calculations(scenario, parameters):
         d_m = d_km * 1000
 
         if d_m > 0 and f_Hz > 0:
-            FSPL_dB = 20 * math.log10(d_m) + 20 * math.log10(f_Hz) - 147.55  # Corrected FSPL formula
+            FSPL_dB = 20 * math.log10(d_m) + 20 * math.log10(f_Hz) - 147.55
         else:
             FSPL_dB = float('inf')
         results['free_space_path_loss_dB'] = FSPL_dB
@@ -185,30 +183,11 @@ def perform_calculations(scenario, parameters):
 
     return results
 
-
 @app.route('/', methods=['GET'])
 def home():
     return jsonify({"status": "API is running"}), 200
 
-
-@app.route('/test', methods=['GET'])
-def test():
-    if not OPENROUTER_API_KEY or not OPENROUTER_MODEL_ID:
-        return jsonify({"error": "API key or model ID missing"}), 500
-    if not openrouter_client:
-        return jsonify({"error": "OpenRouter client not configured properly"}), 503
-
-    try:
-        response = openrouter_client.chat.completions.create(
-            model=OPENROUTER_MODEL_ID,
-            messages=[{"role": "system", "content": "Say hello"}],
-            max_tokens=5
-        )
-        content = response.choices[0].message.content if response.choices else "No response"
-        return jsonify({"success": True, "response": content}), 200
-    except Exception as e:
-        return jsonify({"error": f"OpenRouter connection failed: {str(e)}"}), 500
-
+# The /test route is now removed as it was for OpenRouter.
 
 @app.route('/calculate', methods=['POST'])
 def calculate():
@@ -226,43 +205,39 @@ def calculate():
 
     calc_results = perform_calculations(scenario, parameters)
 
-    if openrouter_client is None:
+    # Check if the OpenAI client was successfully initialized
+    if client is None:
         return jsonify({
-            "calculations": calc_results,
-            "warning": "LLM (OpenRouter) not configured. No explanations generated."
+            "results": calc_results,
+            "explanation": "Could not generate explanation: OpenAI client is not configured on the server."
         }), 200
 
     prompt = f"""
-    You are an expert ENCS5323 teaching assistant.
+    You are an expert ENCS5323 teaching assistant. Explain the following calculations clearly and concisely for a university student.
 
     Scenario: {scenario}
-
-    Inputs:
-    {parameters}
-
-    Calculations:
-    {calc_results}
-
-    Explain the above calculations clearly and concisely.
+    Inputs: {parameters}
+    Calculations: {calc_results}
     """
 
     try:
-        response = openrouter_client.chat.completions.create(
-            model=OPENROUTER_MODEL_ID,
-            messages=[{"role": "system", "content": "You are a helpful assistant."},
-                      {"role": "user", "content": prompt}],
+        # This is the updated API call to OpenAI
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL_ID, # Uses "gpt-3.5-turbo"
+            messages=[
+                {"role": "system", "content": "You are a helpful engineering teaching assistant."},
+                {"role": "user", "content": prompt}
+            ],
             max_tokens=400,
             temperature=0.5,
-            top_p=1,
-            frequency_penalty=0,
-            presence_penalty=0,
         )
         explanation = response.choices[0].message.content
     except Exception as e:
-        explanation = f"Failed to generate explanation due to API error: {str(e)}"
+        print(f"Error communicating with OpenAI API: {e}")
+        explanation = f"Failed to generate explanation due to API error: {e}"
 
     return jsonify({
-        "calculations": calc_results,
+        "results": calc_results,
         "explanation": explanation
     }), 200
 
