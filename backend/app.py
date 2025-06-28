@@ -1,7 +1,7 @@
 import os
 import math
 import traceback
-import httpx # Import the httpx library directly
+import httpx
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
@@ -12,29 +12,36 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
-# --- OpenAI Client Setup ---
+# --- OpenRouter Client Setup (The Main Change) ---
 client = None
-OPENAI_MODEL_ID = "gpt-3.5-turbo"
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 try:
-    if 'OPENAI_API_KEY' not in os.environ:
-        raise ValueError("CRITICAL: OPENAI_API_KEY is not set in the environment variables!")
+    # We now need TWO environment variables from Render
+    api_key = os.environ.get('OPENROUTER_API_KEY')
+    model_id = os.environ.get('OPENROUTER_MODEL_ID')
 
-    # THE DEFINITIVE FIX:
-    # 1. Create a network client that explicitly DOES NOT TRUST the environment.
-    #    This prevents Render from injecting its proxy settings.
+    if not api_key or not model_id:
+        raise ValueError("CRITICAL: OPENROUTER_API_KEY or OPENROUTER_MODEL_ID is not set!")
+
+    # This is the key: we create a clean client that ignores Render's proxy
     custom_http_client = httpx.Client(trust_env=False)
 
-    # 2. Pass this clean, non-proxied client to OpenAI.
-    client = openai.OpenAI(http_client=custom_http_client)
+    # We configure the OpenAI library to point to OpenRouter's servers
+    client = openai.OpenAI(
+        base_url=OPENROUTER_BASE_URL,
+        api_key=api_key,
+        http_client=custom_http_client
+    )
+    OPENAI_MODEL_ID = model_id # Use the model ID from the environment
 
-    print("OpenAI API client configured successfully by disabling environment trust.")
+    print(f"OpenRouter client configured successfully for model: {model_id}")
+
 except Exception as e:
-    print(f"CRITICAL ERROR: Could not configure OpenAI client. {e}")
+    print(f"CRITICAL ERROR: Could not configure OpenRouter client. {e}")
     traceback.print_exc()
 
 # --- The rest of your code is perfect and needs no changes ---
-
 def validate_inputs(scenario, parameters):
     if not isinstance(parameters, dict): return False, "Parameters must be a dictionary."
     if scenario == 'wireless_comm':
@@ -60,7 +67,7 @@ def perform_calculations(scenario, parameters):
 
 @app.route('/', methods=['GET'])
 def home():
-    return jsonify({"status": "API is live and configured correctly."}), 200
+    return jsonify({"status": "API is live and configured for OpenRouter."}), 200
 
 @app.route('/calculate', methods=['POST'])
 def calculate():
@@ -72,20 +79,16 @@ def calculate():
     calc_results = perform_calculations(scenario, parameters)
 
     if client is None:
-        return jsonify({"results": calc_results, "explanation": "Explanation failed: OpenAI client is not configured on the server."})
+        return jsonify({"results": calc_results, "explanation": "Explanation failed: AI client is not configured on the server."})
 
     prompt = f"Expertly explain these calculations for a university student. Scenario: {scenario}, Inputs: {parameters}, Calculations: {calc_results}"
-
     try:
         response = client.chat.completions.create(model=OPENAI_MODEL_ID, messages=[{"role": "user", "content": prompt}])
         explanation = response.choices[0].message.content
     except Exception as e:
-        print("---! OPENAI API CALL FAILED !---")
+        print("---! OPENROUTER API CALL FAILED !---")
         traceback.print_exc()
-        if isinstance(e, openai.AuthenticationError):
-            explanation = "API Error: The OpenAI API key is invalid or has been revoked."
-        else:
-            explanation = "API Error: A connection problem occurred. Check server logs."
+        explanation = "API Error: A problem occurred while contacting the AI model. Check server logs."
 
     return jsonify({"results": calc_results, "explanation": explanation})
 
