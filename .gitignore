@@ -1,0 +1,9 @@
+# Node.js
+/frontend/node_modules
+/frontend/build
+.env
+
+# Python
+/backend/venv
+__pycache__/
+*.pyc
