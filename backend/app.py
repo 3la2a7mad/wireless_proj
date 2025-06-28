@@ -1,7 +1,7 @@
 import os
 import math
 import traceback
-import httpx # Import the httpx library directly
+import httpx
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
@@ -20,12 +20,10 @@ try:
     if 'OPENAI_API_KEY' not in os.environ:
         raise ValueError("CRITICAL: OPENAI_API_KEY is not set in the environment variables!")
 
-    # THE DEFINITIVE FIX:
-    # 1. Create a network client that explicitly DOES NOT TRUST the environment.
-    #    This prevents Render from injecting its proxy settings.
+    # Create a network client that explicitly DOES NOT TRUST the environment.
     custom_http_client = httpx.Client(trust_env=False)
 
-    # 2. Pass this clean, non-proxied client to OpenAI.
+    # Pass this clean, non-proxied client to OpenAI.
     client = openai.OpenAI(http_client=custom_http_client)
 
     print("OpenAI API client configured successfully by disabling environment trust.")
@@ -72,22 +70,39 @@ def calculate():
     calc_results = perform_calculations(scenario, parameters)
 
     if client is None:
-        return jsonify({"results": calc_results, "explanation": "Explanation failed: OpenAI client is not configured on the server."})
+        return jsonify({
+            "results": calc_results,
+            "explanation": "Explanation unavailable: OpenAI client is not configured on the server."
+        }), 200
 
     prompt = f"Expertly explain these calculations for a university student. Scenario: {scenario}, Inputs: {parameters}, Calculations: {calc_results}"
 
     try:
         response = client.chat.completions.create(model=OPENAI_MODEL_ID, messages=[{"role": "user", "content": prompt}])
         explanation = response.choices[0].message.content
+    except openai.RateLimitError as e:
+        print("---! OPENAI API RATE LIMIT EXCEEDED !---")
+        traceback.print_exc()
+        return jsonify({
+            "results": calc_results,
+            "explanation": "Explanation unavailable: OpenAI API rate limit exceeded. Please try again later or contact support."
+        }), 200
+    except openai.AuthenticationError as e:
+        print("---! OPENAI API AUTHENTICATION ERROR !---")
+        traceback.print_exc()
+        return jsonify({
+            "results": calc_results,
+            "explanation": "Explanation unavailable: Invalid OpenAI API key."
+        }), 200
     except Exception as e:
         print("---! OPENAI API CALL FAILED !---")
         traceback.print_exc()
-        if isinstance(e, openai.AuthenticationError):
-            explanation = "API Error: The OpenAI API key is invalid or has been revoked."
-        else:
-            explanation = "API Error: A connection problem occurred. Check server logs."
+        return jsonify({
+            "results": calc_results,
+            "explanation": "Explanation unavailable: An error occurred while connecting to the OpenAI API. Check server logs."
+        }), 200
 
-    return jsonify({"results": calc_results, "explanation": explanation})
+    return jsonify({"results": calc_results, "explanation": explanation}), 200
 
 if __name__ == '__main__':
     port = int(os.getenv("PORT", 5000))
