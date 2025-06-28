@@ -20,15 +20,15 @@ try:
     if 'OPENAI_API_KEY' not in os.environ:
         raise ValueError("CRITICAL: OPENAI_API_KEY is not set in the environment variables!")
 
-    # THE DEFINITIVE FIX FOR THE RENDER PROXY ISSUE:
-    # 1. Manually create an httpx network client.
-    # 2. Explicitly tell it to have NO proxies.
-    # 3. Pass this custom-configured client to OpenAI.
-    custom_http_client = httpx.Client(proxies={})
+    # THE DEFINITIVE FIX:
+    # 1. Create a network client that explicitly DOES NOT TRUST the environment.
+    #    This prevents Render from injecting its proxy settings.
+    custom_http_client = httpx.Client(trust_env=False)
 
+    # 2. Pass this clean, non-proxied client to OpenAI.
     client = openai.OpenAI(http_client=custom_http_client)
 
-    print("OpenAI API client configured successfully using custom HTTP client.")
+    print("OpenAI API client configured successfully by disabling environment trust.")
 except Exception as e:
     print(f"CRITICAL ERROR: Could not configure OpenAI client. {e}")
     traceback.print_exc()
