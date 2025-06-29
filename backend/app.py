@@ -12,7 +12,7 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
-# --- OpenRouter Client Setup (Final Correct Version) ---
+# --- OpenRouter Client Setup  ---
 client = None
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
@@ -58,7 +58,7 @@ def validate_inputs(scenario, parameters):
     return True, ""
 
 
-# --- CALCULATION FUNCTION (FULL VERSION RESTORED) ---
+# --- CALCULATION FUNCTION 
 def perform_calculations(scenario, parameters):
     results = {}
     if scenario == 'wireless_comm':
@@ -100,7 +100,7 @@ def perform_calculations(scenario, parameters):
     
     return results
 
-# --- Main API Endpoints (No Changes Needed Here) ---
+# --- Main API Endpoints 
 @app.route('/', methods=['GET'])
 def home():
     return jsonify({"status": "API is live and configured for OpenRouter."}), 200
